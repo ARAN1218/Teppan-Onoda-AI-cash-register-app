@@ -7,13 +7,14 @@ import uuid
 import pytz
 import gspread
 from gspread_dataframe import get_as_dataframe, set_with_dataframe
+import time # timeモジュールをインポート
+from mlxtend.frequent_patterns import apriori, association_rules # 併売分析のために追加
 
 # --- アプリケーションの基本設定 ---
 st.set_page_config(
-    page_title="学園祭 鉄板焼きレジシステム",
+    page_title="鉄板おの田 AIレジ🤖",
     page_icon="🍳",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
 # --- 商品メニューと価格の定義 ---
@@ -37,7 +38,7 @@ MENU = {
 SHEET_COLUMNS = [
     "タイムスタンプ", "TransactionID", "合計金額",
     "焼きそば", "焼きとうもろこし", "フランクフルト", "ラムネ", "缶ジュース",
-    "焼きそば&ラムネセット", "焼きそば&缶ジュースセット", # "ラム네セット" のタイポを修正
+    "焼きそば&ラムネセット", "焼きそば&缶ジュースセット",
     "【経シス割引券】焼きそば&ラムネセット", "【特別割引券】焼きそば&ラムネセット", "【PiedPiper割引券】焼きそば&缶ジュースセット"
 ]
 
@@ -108,6 +109,13 @@ def load_data_from_sheet(_gc):
         return pd.DataFrame(columns=SHEET_COLUMNS)
 
 # --- ヘルパー関数 ---
+def add_to_cart(item_name):
+    """カートに商品を追加し、フィードバックを表示する"""
+    st.session_state.cart.append(item_name)
+    update_total()
+    st.toast(f'「{item_name}」をカートに追加しました！', icon='👍')
+
+
 def update_total():
     """カート内の合計金額を計算して更新する"""
     st.session_state.total_amount = sum(MENU[item] for item in st.session_state.cart)
@@ -153,7 +161,9 @@ def preprocess_data(df):
     
     # 商品カラムを数値型に変換
     for col in SHEET_COLUMNS[3:]:
-        df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce').fillna(0)
+        # カラムが存在するか確認してから処理する
+        if col in df_processed.columns:
+            df_processed[col] = pd.to_numeric(df_processed[col], errors='coerce').fillna(0)
         
     return df_processed
 
@@ -162,14 +172,15 @@ def preprocess_data(df):
 # タブを作成
 tab1, tab2 = st.tabs(["🛒 レジ", "📊 データ分析"])
 
-
 # --- レジタブのUI ---
 with tab1:
     if st.session_state.page == "register":
-        st.title("🍳 鉄板焼き レジシステム")
+        st.title("🍳 鉄板おの田 AIレジ")
         
+        # 2カラムレイアウトに戻す
         col1, col2 = st.columns([2, 1])
         
+        # col1: メニューボタン
         with col1:
             st.header("メニュー")
             
@@ -178,55 +189,45 @@ with tab1:
             food_cols = st.columns(3)
             with food_cols[0]:
                 if st.button("焼きそば (¥500)", use_container_width=True):
-                    st.session_state.cart.append("焼きそば")
-                    update_total()
+                    add_to_cart("焼きそば")
             with food_cols[1]:
                 if st.button("焼きとうもろこし (¥400)", use_container_width=True):
-                    st.session_state.cart.append("焼きとうもろこし")
-                    update_total()
+                    add_to_cart("焼きとうもろこし")
             with food_cols[2]:
                 if st.button("フランクフルト (¥300)", use_container_width=True):
-                    st.session_state.cart.append("フランクフルト")
-                    update_total()
+                    add_to_cart("フランクフルト")
                     
             st.subheader("ドリンク")
             drink_cols = st.columns(3)
             with drink_cols[0]:
                 if st.button("ラムネ (¥250)", use_container_width=True):
-                    st.session_state.cart.append("ラムネ")
-                    update_total()
+                    add_to_cart("ラムネ")
             with drink_cols[1]:
                 if st.button("缶ジュース (¥150)", use_container_width=True):
-                    st.session_state.cart.append("缶ジュース")
-                    update_total()
+                    add_to_cart("缶ジュース")
             
             st.subheader("セットメニュー")
             set_cols = st.columns(2)
             with set_cols[0]:
                 if st.button("焼きそば&ラムネセット (¥700)", use_container_width=True):
-                    st.session_state.cart.append("焼きそば&ラムネセット")
-                    update_total()
+                    add_to_cart("焼きそば&ラムネセット")
             with set_cols[1]:
                 if st.button("焼きそば&缶ジュースセット (¥600)", use_container_width=True):
-                    st.session_state.cart.append("焼きそば&缶ジュースセット")
-                    update_total()
+                    add_to_cart("焼きそば&缶ジュースセット")
 
             st.subheader("割引券セット")
             discount_cols = st.columns(3)
             with discount_cols[0]:
                  if st.button("【経シス割引券】焼きそば&ラムネセット (¥600)", use_container_width=True):
-                    st.session_state.cart.append("【経シス割引券】焼きそば&ラムネセット")
-                    update_total()
+                    add_to_cart("【経シス割引券】焼きそば&ラムネセット")
             with discount_cols[1]:
                  if st.button("【特別割引券】焼きそば&ラムネセット (¥500)", use_container_width=True):
-                    st.session_state.cart.append("【特別割引券】焼きそば&ラムネセット")
-                    update_total()
+                    add_to_cart("【特別割引券】焼きそば&ラムネセット")
             with discount_cols[2]:
                  if st.button("【PiedPiper割引券】焼きそば&缶ジュースセット (¥500)", use_container_width=True):
-                    st.session_state.cart.append("【PiedPiper割引券】焼きそば&缶ジュースセット")
-                    update_total()
-
-
+                    add_to_cart("【PiedPiper割引券】焼きそば&缶ジュースセット")
+        
+        # col2: 注文内容と確定ボタン
         with col2:
             st.header("現在の注文")
             
@@ -293,11 +294,13 @@ with tab1:
                         worksheet = spreadsheet.worksheet("売上データ")
                         worksheet.append_row(new_row_data, value_input_option='USER_ENTERED')
                         
-                        st.success("売上を記録しました！")
+                        st.success("売上を記録しました！ありがとうございました！")
                         st.balloons()
                         
                         # データ分析タブのキャッシュをクリアして最新情報を反映
                         st.cache_data.clear()
+                        
+                        time.sleep(2) # 2秒待機
                         
                         clear_cart()
                         st.session_state.page = "register" # レジ画面に戻る
@@ -331,6 +334,19 @@ with tab2:
         else:
             df = preprocess_data(df_raw)
 
+            # --- 分析用データの前処理 (セットメニューの集約) ---
+            df_analysis = df.copy()
+
+            # 割引セットを通常セットに合算
+            df_analysis['焼きそば&ラムネセット'] = df[['焼きそば&ラムネセット', '【経シス割引券】焼きそば&ラムネセット', '【特別割引券】焼きそば&ラムネセット']].sum(axis=1)
+            df_analysis['焼きそば&缶ジュースセット'] = df[['焼きそば&缶ジュースセット', '【PiedPiper割引券】焼きそば&缶ジュースセット']].sum(axis=1)
+
+            # 分析で使う商品カラムリスト（割引セットは除く）
+            product_cols_for_analysis = [
+                "焼きそば", "焼きとうもろこし", "フランクフルト", "ラムネ", "缶ジュース",
+                "焼きそば&ラムネセット", "焼きそば&缶ジュースセット"
+            ]
+
             # 1. サマリー
             st.header("📈 サマリー")
             total_sales = df['合計金額'].sum()
@@ -350,108 +366,103 @@ with tab2:
             # 2. 商品別分析
             st.header("🍔 商品別分析")
             
-            # 商品カラムのみを抽出
-            product_cols = [col for col in SHEET_COLUMNS if col in MENU]
-            
-            # --- 修正箇所 ---
-            # 商品ごとの販売数量と売上を計算（ベクトル化による効率化とバグ修正）
-            # この修正は、お手元のファイルで発生している KeyError の原因である、
-            # 誤った計算ロジックを、より安全で効率的な方法に置き換えるものです。
-            if not df.empty and all(col in df.columns for col in product_cols):
-                # 商品ごとの販売数量を合計
-                quantities = df[product_cols].sum()
+            if not df_analysis.empty and all(col in df_analysis.columns for col in product_cols_for_analysis):
+                quantities = df_analysis[product_cols_for_analysis].sum()
                 
-                # 商品名に対応する価格のSeriesを作成
-                prices = pd.Series(MENU)[quantities.index]
+                # 価格のSeriesを作成（集約後の商品リストで）
+                prices_for_analysis = {k: v for k, v in MENU.items() if k in product_cols_for_analysis}
+                prices = pd.Series(prices_for_analysis)[quantities.index]
                 
-                # 販売数量と価格を要素ごとに掛けて売上を算出
                 sales_by_product = quantities * prices
-                
-                # 分析用のDataFrameを作成
                 product_sales = pd.DataFrame({
                     '販売数量': quantities,
                     '売上金額': sales_by_product
                 }).reset_index().rename(columns={'index': '商品'})
 
             else:
-                # データがない場合の空のDataFrame
                 product_sales = pd.DataFrame(columns=['商品', '販売数量', '売上金額'])
-            # --- 修正ここまで ---
 
             # ランキング表示
             col_rank1, col_rank2 = st.columns(2)
             with col_rank1:
                 st.subheader("💰 売上金額ランキング")
                 top_sales = product_sales.sort_values('売上金額', ascending=False).reset_index(drop=True)
-                st.dataframe(top_sales, hide_index=True, use_container_width=True)
+                st.dataframe(top_sales.style.background_gradient(subset=['売上金額'], cmap='Reds'), hide_index=True, use_container_width=True)
             with col_rank2:
                 st.subheader("🔢 販売数量ランキング")
                 top_quantity = product_sales.sort_values('販売数量', ascending=False).reset_index(drop=True)
-                st.dataframe(top_quantity, hide_index=True, use_container_width=True)
+                st.dataframe(top_quantity.style.background_gradient(subset=['販売数量'], cmap='Blues'), hide_index=True, use_container_width=True)
 
             # 売上構成比 (円グラフ)
             st.subheader("🍰 売上構成比")
-            fig_pie = px.pie(product_sales[product_sales['売上金額']>0], names='商品', values='売上金額', 
+            # データを売上金額でソート
+            sorted_product_sales = product_sales.sort_values('売上金額', ascending=False)
+            fig_pie = px.pie(sorted_product_sales[sorted_product_sales['売上金額']>0], names='商品', values='売上金額', 
                              title='商品別の売上構成比', hole=0.3)
-            fig_pie.update_traces(textposition='inside', textinfo='percent+label')
+            fig_pie.update_traces(textposition='inside', textinfo='percent+label', sort=False) # Plotly側でのソートは無効化
             st.plotly_chart(fig_pie, use_container_width=True)
 
             st.divider()
 
             # 3. 時間帯別分析
             st.header("🕒 時間帯別分析")
-            hourly_analysis = df.groupby('時間帯').agg(
-                売上=('合計金額', 'sum'),
-                販売件数=('TransactionID', 'count')
+            time_interval = st.radio("集計間隔を選択（分）", [10, 20, 30, 60], horizontal=True, index=3)
+            
+            # タイムスタンプをインデックスに設定
+            df_time_analysis = df.set_index('タイムスタンプ')
+            
+            # 指定した間隔でリサンプリング（集計）
+            time_binned = df_time_analysis.resample(f'{time_interval}T').agg(
+                販売件数=('TransactionID', 'count'),
+                売上=('合計金額', 'sum')
             ).reset_index()
             
-            fig_hourly = go.Figure()
-            fig_hourly.add_trace(go.Scatter(x=hourly_analysis['時間帯'], y=hourly_analysis['売上'],
-                                          mode='lines+markers', name='売上', yaxis='y1'))
-            fig_hourly.add_trace(go.Scatter(x=hourly_analysis['時間帯'], y=hourly_analysis['販売件数'],
-                                          mode='lines+markers', name='販売件数', yaxis='y2'))
-
-            fig_hourly.update_layout(
-                title="時間帯別の売上・販売件数 推移",
-                xaxis_title="時間帯",
-                yaxis_title="売上 (円)",
-                yaxis2=dict(title="販売件数", overlaying='y', side='right'),
-                legend=dict(x=0.1, y=0.9)
-            )
-            st.plotly_chart(fig_hourly, use_container_width=True)
-
+            fig_hist = px.bar(time_binned, x='タイムスタンプ', y='販売件数', title=f'{time_interval}分間の販売件数推移',
+                              hover_data=['売上'])
+            fig_hist.update_xaxes(title_text='時間')
+            fig_hist.update_yaxes(title_text='販売件数')
+            st.plotly_chart(fig_hist, use_container_width=True)
+            
             st.divider()
 
-            # 4. 併売分析
-            st.header("🤝 併売分析")
-            st.write("「この商品を買った人は、こちらも買っています」分析")
+            # 4. 併売分析 (アソシエーション分析)
+            st.header("🤝 併売分析 (アソシエーションルール)")
+            st.info("""
+            **支持度 (Support):** 全体の中で、商品AとBが同時に買われる確率。
+            **信頼度 (Confidence):** 商品Aを買った人が、商品Bも買う確率。
+            **リフト値 (Lift):** 商品B単体で売れる確率に比べ、Aを買ったことでBが売れる確率が何倍になったか。**1より大きいと正の相関**があり、値が大きいほど関連性が強いとされます。
+            """)
+
+            # 分析用のデータ（購入したかどうかをTrue/Falseで表現）
+            basket_sets = df_analysis[product_cols_for_analysis] > 0
             
-            # 分析対象の商品を選択
-            target_product = st.selectbox("分析したい商品を選択してください", options=product_cols)
-            
-            if target_product:
-                # 対象商品を購入したトランザクションを抽出
-                bought_together_df = df[df[target_product] > 0]
+            if len(basket_sets) > 10: # データが少ないと分析できないため
+                # 支持度が高い商品ペアを抽出 (min_supportはデータ量に応じて調整)
+                frequent_itemsets = apriori(basket_sets, min_support=0.05, use_colnames=True)
                 
-                if not bought_together_df.empty:
-                    # 対象商品以外の商品の購入数を集計
-                    other_products = bought_together_df[product_cols].drop(columns=[target_product]).sum()
-                    other_products = other_products[other_products > 0].sort_values(ascending=False).reset_index()
-                    other_products.columns = ['一緒に買われた商品', '購入数']
+                if not frequent_itemsets.empty:
+                    # アソシエーションルールを計算
+                    rules = association_rules(frequent_itemsets, metric="lift", min_threshold=1)
                     
-                    if not other_products.empty:
-                        st.write(f"**「{target_product}」** と一緒に買われている商品:")
-                        fig_basket = px.bar(other_products, x='一緒に買われた商品', y='購入数',
-                                            text_auto=True, title=f"「{target_product}」との併売ランキング")
-                        st.plotly_chart(fig_basket, use_container_width=True)
+                    if not rules.empty:
+                        # 結果の整形
+                        rules['antecedents'] = rules['antecedents'].apply(lambda x: ', '.join(list(x)))
+                        rules['consequents'] = rules['consequents'].apply(lambda x: ', '.join(list(x)))
+                        
+                        st.subheader("📈 リフト値TOP10の組み合わせ")
+                        display_rules = rules.sort_values('lift', ascending=False).head(10)
+                        st.dataframe(display_rules[['antecedents', 'consequents', 'support', 'confidence', 'lift']], hide_index=True, use_container_width=True)
                     else:
-                        st.info(f"「{target_product}」はまだ他の商品と一緒には購入されていません。")
+                        st.warning("リフト値が1を超える意味のある組み合わせは見つかりませんでした。")
                 else:
-                    st.info(f"「{target_product}」はまだ購入されていません。")
+                    st.warning("頻繁に購入される商品の組み合わせが見つかりませんでした。")
+            else:
+                st.warning("分析するには、あと " + str(11 - len(basket_sets)) + " 件以上の取引データが必要です。")
+
 
             st.divider()
 
-            # 5 & 6. セットメニューと割引券の効果測定
+            # 5 & 6. セットメニューと割引券の効果測定 (元のdfを使用)
             st.header("🎁 セットメニュー・割引券の効果測定")
             
             set_menu_data = {
@@ -482,5 +493,4 @@ with tab2:
                 st.metric("全セット販売数", f"{total_sets:.0f} 個")
                 st.metric("うち割引券利用数", f"{discount_sets:.0f} 個")
                 st.metric("割引券利用率", f"{discount_rate:.1f} %")
-
 

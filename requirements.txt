@@ -4,3 +4,4 @@ gspread-dataframe
 pandas
 plotly
 pytz
+mlxtend
